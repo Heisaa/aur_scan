@@ -1,0 +1,48 @@
+schema_version = 1
+generated_at = "2026-06-13"
+source_url = "https://github.com/lenucksi/aur-malware-check"
+source_revision = "6520a5eb0079e1a04a600082c26ffaba237a0f22"
+
+known_packages = []
+
+[[literal_rules]]
+id = "IOC_ATOMIC_LOCKFILE"
+severity = "CRITICAL"
+needle = "atomic-lockfile"
+description = "Known-risk dependency indicator"
+rationale = "This exact dependency name appears in the configured threat indicators."
+
+[[literal_rules]]
+id = "IOC_JS_DIGEST"
+severity = "CRITICAL"
+needle = "js-digest"
+description = "Known-risk dependency indicator"
+rationale = "This exact dependency name appears in the configured threat indicators."
+
+[[literal_rules]]
+id = "IOC_ATTACKER_PUBLISHER"
+severity = "CRITICAL"
+needle = "herbsobering"
+description = "Known-risk publisher indicator"
+rationale = "This exact publisher string appears in the configured threat indicators."
+
+[[literal_rules]]
+id = "IOC_EBPF_PIN"
+severity = "CRITICAL"
+needle = "/sys/fs/bpf/hidden_"
+description = "Known-risk hidden eBPF artifact path"
+rationale = "This path pattern appears in the configured persistence indicators."
+
+[[literal_rules]]
+id = "IOC_MONERO_GUI"
+severity = "HIGH"
+needle = "/usr/bin/monero-wallet-gui"
+description = "Known-risk executable reference"
+rationale = "This path appears in the configured threat indicators and warrants manual review."
+
+[[regex_rules]]
+id = "OBFUSCATED_LONG_HEX"
+severity = "MEDIUM"
+pattern = "(?i)(?:[0-9a-f]{2}){64,}"
+description = "Long hexadecimal blob"
+rationale = "Long encoded blobs can conceal commands or payloads."

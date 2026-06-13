@@ -1,0 +1,41 @@
+[package]
+name = "aur-scan"
+version = "0.1.3"
+edition = "2024"
+rust-version = "1.85"
+description = "Static, phase-aware security scanner for AUR packaging metadata"
+license = "MIT"
+
+[dependencies]
+aho-corasick = "1.1"
+anyhow = "1.0"
+clap = { version = "4.6", features = ["derive", "env"] }
+dirs = "6.0"
+hex = "0.4"
+minisign-verify = "0.2"
+regex = "1.12"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+similar = "2.7"
+tempfile = "3.23"
+thiserror = "2.0"
+toml = "0.9"
+tree-sitter = "0.26"
+tree-sitter-bash = "0.25"
+ureq = "3.1"
+
+[dev-dependencies]
+assert_cmd = "2.1"
+minisign = "0.9"
+predicates = "3.1"
+
+[profile.release]
+lto = "thin"
+strip = true
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "deny"
