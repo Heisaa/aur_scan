@@ -83,8 +83,11 @@ aur-scan diff /path/to/package
 ```
 
 Approval is explicit and never happens as a side effect of scanning. Approval
-refuses `HIGH` or `CRITICAL` findings unless `--force` is supplied. Findings on
-lines added since approval are marked `NEW`.
+refuses `HIGH` or `CRITICAL` findings unless `--force` is supplied. Approval
+records the findings present at that moment: on later scans they are labeled
+`ACCEPTED` and no longer count toward the blocking threshold, so a reviewed
+package builds again. Findings on lines added since approval are marked `NEW`
+and always block as usual, even when an identical finding was accepted before.
 
 The cache defaults to `$XDG_CACHE_HOME/aur-scan/baselines`. Override it with
 `--cache-dir` or `AUR_SCAN_CACHE_DIR`.
@@ -127,9 +130,10 @@ the network.
 ## What It Detects
 
 - configured known-risk package names, dependencies, publishers, and artifacts
-- network or decoded content piped into shells
+- network or decoded content piped into shells, including inside `sh -c`
+  payloads and pacman hook `Exec =` command lines (phase `alpm-hook`)
 - package-manager installs, weighted by PKGBUILD phase
-- network clients in install scriptlets and `package()`
+- network clients in install scriptlets, hooks, and `package()`
 - persistence and credential-adjacent paths
 - suspicious source hosts and skipped checksums
 - missing checksum arrays, absent upstream/source references, and unusually
@@ -144,7 +148,9 @@ Human findings include severity, confidence, rule ID, source location, phase,
 snippet, and rationale. Snippets are length-limited and stripped of control
 characters before terminal output. Human reports also end with one concise
 `OK:` line naming major check groups that produced no findings. Declared
-`*sums` checksum values are excluded from long-hex obfuscation detection.
+`*sums` checksum values, including multi-line arrays, are excluded from
+long-hex obfuscation detection. Heuristic text rules skip comments; exact IOC
+indicators still match anywhere, including comments.
 Human reports include a blank line before and after the result so Paru output
 remains readable.
 
@@ -171,4 +177,8 @@ cargo build --release
 
 The integration suite exercises Paru-style invocation, exit statuses, phase
 classification, install scriptlets, baselines, signed updates, malformed
-syntax, and hostile symlinks.
+syntax, and hostile symlinks. A frozen snapshot of the 50 most-voted AUR
+packages under [`tests/corpus/`](tests/corpus/README.md) asserts that popular,
+widely reviewed packages produce no blocking findings and stay within a
+documented budget of medium findings, so rule changes cannot silently regress
+precision.

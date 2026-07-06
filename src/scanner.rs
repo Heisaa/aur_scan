@@ -1,5 +1,6 @@
 use std::{
     collections::HashSet,
+    ops::Range,
     path::{Path, PathBuf},
 };
 
@@ -63,10 +64,13 @@ fn scan_loaded(package: &PackageInput, cache_root: &Path, rules: &RuleSet) -> Re
     let mut findings = Vec::new();
 
     for file in &package.files {
-        findings.extend(rules::scan_text(file, rules)?);
-        if file.kind.is_script() {
-            findings.extend(rules::scan_bash(file, &bash::analyze(file)?));
-        }
+        let analysis = bash::analyze(file)?;
+        findings.extend(rules::scan_text(
+            file,
+            rules,
+            &comment_ranges(file, &analysis),
+        )?);
+        findings.extend(rules::scan_bash(file, &analysis));
     }
     if let Some(metadata_file) = package
         .files
@@ -87,6 +91,7 @@ fn scan_loaded(package: &PackageInput, cache_root: &Path, rules: &RuleSet) -> Re
     }
 
     annotate_changes(&mut findings, &comparison.changed_lines);
+    annotate_accepted(&mut findings, &comparison.accepted_findings);
     deduplicate(&mut findings);
     findings.sort_by(Finding::sort_cmp);
     let checks_passed = passed_checks(&findings);
@@ -160,6 +165,47 @@ fn annotate_changes(
             .get(&finding.file)
             .is_some_and(|lines| lines.contains(&finding.line));
     }
+}
+
+fn annotate_accepted(findings: &mut [Finding], accepted: &[baseline::AcceptedFinding]) {
+    if accepted.is_empty() {
+        return;
+    }
+    let accepted: HashSet<(&str, &str, &str)> = accepted
+        .iter()
+        .map(|finding| {
+            (
+                finding.rule_id.as_str(),
+                finding.file.as_str(),
+                finding.snippet.as_str(),
+            )
+        })
+        .collect();
+    for finding in findings {
+        if finding.new_since_approval {
+            continue;
+        }
+        if let Some(name) = finding.file.to_str()
+            && accepted.contains(&(finding.rule_id.as_str(), name, finding.snippet.as_str()))
+        {
+            finding.accepted = true;
+        }
+    }
+}
+
+fn comment_ranges(file: &SourceFile, analysis: &bash::BashAnalysis) -> Vec<Range<usize>> {
+    if file.kind.is_script() {
+        return analysis.comment_ranges.clone();
+    }
+    let mut ranges = Vec::new();
+    let mut start = 0;
+    for line in file.text.split('\n') {
+        if line.trim_start().starts_with('#') {
+            ranges.push(start..start + line.len());
+        }
+        start += line.len() + 1;
+    }
+    ranges
 }
 
 fn deduplicate(findings: &mut Vec<Finding>) {

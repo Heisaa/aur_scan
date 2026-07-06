@@ -1,0 +1,23 @@
+pkgbase = android-sdk-platform-tools
+	pkgdesc = Platform-Tools for Google Android SDK (adb and fastboot)
+	pkgver = 37.0.0
+	pkgrel = 1
+	url = http://developer.android.com/sdk/index.html
+	install = android-sdk-platform-tools.install
+	arch = x86_64
+	license = custom
+	depends = zlib
+	depends = ncurses
+	provides = adb
+	provides = android-tools
+	conflicts = adb
+	source = https://dl.google.com/android/repository/platform-tools_r37.0.0-linux.zip
+	source = adb.service
+	source = license.html
+	source = package.xml
+	sha1sums = bcf323933980a59dccc3f14c339aed5fb2171163
+	sha1sums = 49a40c129199844603afe71fce69c0908e062393
+	sha1sums = bfb91be7e0b602d765b7a1fcaf0ce1b7e1a93faa
+	sha1sums = 72a5dcc9c3f3e1985e6b6ac8b315875e50a7c18f
+
+pkgname = android-sdk-platform-tools

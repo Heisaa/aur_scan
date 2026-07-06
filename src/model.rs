@@ -60,6 +60,8 @@ pub struct Finding {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub phase: Option<String>,
     pub new_since_approval: bool,
+    #[serde(default)]
+    pub accepted: bool,
 }
 
 impl Finding {
@@ -95,7 +97,7 @@ impl ScanReport {
     pub fn blocks(&self, threshold: Severity) -> bool {
         self.findings
             .iter()
-            .any(|finding| finding.severity >= threshold)
+            .any(|finding| !finding.accepted && finding.severity >= threshold)
     }
 }
 

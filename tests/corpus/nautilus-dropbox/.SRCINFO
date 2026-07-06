@@ -1,0 +1,20 @@
+pkgbase = nautilus-dropbox
+	pkgdesc = Dropbox Nautilus Extension
+	pkgver = 2026.05.06
+	pkgrel = 1
+	url = https://www.dropbox.com/
+	arch = x86_64
+	license = CC-BY-ND-3.0 AND GPL-3.0-or-later
+	makedepends = python
+	makedepends = python-docutils
+	makedepends = python-gobject
+	makedepends = gnome-common
+	depends = nautilus
+	depends = libnautilus-extension
+	depends = dropbox
+	options = !libtool
+	options = !emptydirs
+	source = nautilus-dropbox-2026.05.06.tar.gz::https://github.com/dropbox/nautilus-dropbox/archive/refs/tags/v2026.05.06.tar.gz
+	sha512sums = 64c9e02ddacb30ada8ac803a3f888494be91a7d56e83942fc4b0a96b9abc7a39023b689011d782fdcbb64ce481a4fc93ffd2fa1190a9731af2b1f432f25a6f3f
+
+pkgname = nautilus-dropbox

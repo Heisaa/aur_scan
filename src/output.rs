@@ -30,16 +30,23 @@ pub fn write_human(report: &ScanReport, mut writer: impl Write) -> Result<()> {
     let worst = report
         .worst_severity()
         .map_or_else(|| "NONE".to_owned(), |severity| severity.to_string());
+    let accepted = report
+        .findings
+        .iter()
+        .filter(|finding| finding.accepted)
+        .count();
+    let baseline_note = if accepted > 0 {
+        format!(" - {accepted} accepted by approval")
+    } else if report.baseline_present {
+        " - approved baseline available".to_owned()
+    } else {
+        String::new()
+    };
     writeln!(
         writer,
-        "Result: {worst} ({} {}){}",
+        "Result: {worst} ({} {}){baseline_note}",
         report.findings.len(),
         plural(report.findings.len(), "finding", "findings"),
-        if report.baseline_present {
-            " - approved baseline available"
-        } else {
-            ""
-        }
     )
     .context("cannot write report")?;
     writeln!(writer).context("cannot write report spacing")?;
@@ -47,6 +54,8 @@ pub fn write_human(report: &ScanReport, mut writer: impl Write) -> Result<()> {
     for (index, finding) in report.findings.iter().enumerate() {
         let changed = if finding.new_since_approval {
             " [NEW]"
+        } else if finding.accepted {
+            " [ACCEPTED]"
         } else {
             ""
         };

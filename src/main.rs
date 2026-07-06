@@ -156,6 +156,7 @@ fn run(cli: Cli) -> Result<ExitCode> {
                 &package.package_base,
                 &package.package_names,
                 &package.files,
+                &report.findings,
             )?;
             eprintln!(
                 "aur-scan: approved {} at {}",

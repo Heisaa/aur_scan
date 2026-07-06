@@ -11,7 +11,7 @@ use sha2::{Digest, Sha256};
 use similar::{ChangeTag, TextDiff};
 use tempfile::TempDir;
 
-use crate::input::SourceFile;
+use crate::{input::SourceFile, model::Finding};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Manifest {
@@ -20,6 +20,15 @@ struct Manifest {
     package_base: String,
     package_names: Vec<String>,
     files: Vec<FileRecord>,
+    #[serde(default)]
+    accepted_findings: Vec<AcceptedFinding>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcceptedFinding {
+    pub rule_id: String,
+    pub file: String,
+    pub snippet: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -32,6 +41,7 @@ struct FileRecord {
 pub struct BaselineComparison {
     pub present: bool,
     pub changed_lines: HashMap<PathBuf, HashSet<usize>>,
+    pub accepted_findings: Vec<AcceptedFinding>,
 }
 
 pub fn default_cache_root() -> Result<PathBuf> {
@@ -45,6 +55,7 @@ pub fn approve(
     package_base: &str,
     package_names: &[String],
     files: &[SourceFile],
+    findings: &[Finding],
 ) -> Result<PathBuf> {
     fs::create_dir_all(cache_root)
         .with_context(|| format!("cannot create cache directory {}", cache_root.display()))?;
@@ -78,6 +89,14 @@ pub fn approve(
         package_base: package_base.to_owned(),
         package_names: package_names.to_vec(),
         files: records,
+        accepted_findings: findings
+            .iter()
+            .map(|finding| AcceptedFinding {
+                rule_id: finding.rule_id.clone(),
+                file: finding.file.to_string_lossy().into_owned(),
+                snippet: finding.snippet.clone(),
+            })
+            .collect(),
     };
     fs::write(
         staging.path().join("manifest.json"),
@@ -148,6 +167,7 @@ pub fn compare(
     Ok(BaselineComparison {
         present: true,
         changed_lines,
+        accepted_findings: manifest.accepted_findings,
     })
 }
 

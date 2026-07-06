@@ -1,4 +1,4 @@
-use std::{collections::HashSet, path::Path};
+use std::{collections::HashSet, ops::Range, path::Path, sync::LazyLock};
 
 use aho_corasick::AhoCorasick;
 use anyhow::{Context, Result, bail};
@@ -108,8 +108,13 @@ fn validate_id(id: &str, ids: &mut HashSet<String>) -> Result<()> {
     Ok(())
 }
 
-pub fn scan_text(file: &SourceFile, rules: &RuleSet) -> Result<Vec<Finding>> {
+pub fn scan_text(
+    file: &SourceFile,
+    rules: &RuleSet,
+    comment_ranges: &[Range<usize>],
+) -> Result<Vec<Finding>> {
     let mut findings = Vec::new();
+    let checksum_ranges = checksum_ranges(&file.text);
 
     if !rules.literal_rules.is_empty() {
         let matcher = AhoCorasick::new(rules.literal_rules.iter().map(|rule| &rule.needle))
@@ -132,7 +137,10 @@ pub fn scan_text(file: &SourceFile, rules: &RuleSet) -> Result<Vec<Finding>> {
         let pattern = Regex::new(&rule.pattern)
             .with_context(|| format!("cannot compile rule {}", rule.id))?;
         for matched in pattern.find_iter(&file.text) {
-            if rule.id == "OBFUSCATED_LONG_HEX" && is_checksum_assignment(file, matched.start()) {
+            if within(comment_ranges, matched.start()) {
+                continue;
+            }
+            if rule.id == "OBFUSCATED_LONG_HEX" && within(&checksum_ranges, matched.start()) {
                 continue;
             }
             findings.push(text_finding(
@@ -147,24 +155,30 @@ pub fn scan_text(file: &SourceFile, rules: &RuleSet) -> Result<Vec<Finding>> {
         }
     }
 
-    findings.extend(scan_builtin_text(file));
+    findings.extend(scan_builtin_text(file, comment_ranges));
     Ok(findings)
 }
 
-fn is_checksum_assignment(file: &SourceFile, byte_offset: usize) -> bool {
-    let line_start = file.text[..byte_offset]
-        .rfind('\n')
-        .map_or(0, |index| index + 1);
-    let line_end = file.text[byte_offset..]
-        .find('\n')
-        .map_or(file.text.len(), |index| byte_offset + index);
-    let line = &file.text[line_start..line_end];
-    Regex::new(r"(?i)^\s*(?:b2|md5|sha(?:1|224|256|384|512))sums?(?:_[A-Za-z0-9_]+)?\s*=")
-        .expect("checksum assignment regex must compile")
-        .is_match(line)
+fn within(ranges: &[Range<usize>], byte_offset: usize) -> bool {
+    ranges.iter().any(|range| range.contains(&byte_offset))
 }
 
-fn scan_builtin_text(file: &SourceFile) -> Vec<Finding> {
+/// Byte spans of `*sums=` assignments, including multi-line arrays, so
+/// declared checksum values are not reported as obfuscated blobs.
+fn checksum_ranges(text: &str) -> Vec<Range<usize>> {
+    static CHECKSUM_ASSIGNMENT: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(
+            r"(?im)^\s*(?:b2|md5|sha(?:1|224|256|384|512))sums?(?:_[A-Za-z0-9_]+)?\s*\+?=\s*(?:\([^)]*\)|[^\n]*)",
+        )
+        .expect("checksum assignment regex must compile")
+    });
+    CHECKSUM_ASSIGNMENT
+        .find_iter(text)
+        .map(|matched| matched.range())
+        .collect()
+}
+
+fn scan_builtin_text(file: &SourceFile, comment_ranges: &[Range<usize>]) -> Vec<Finding> {
     let rules = [
         (
             "PERSISTENCE_PATH",
@@ -199,6 +213,12 @@ fn scan_builtin_text(file: &SourceFile) -> Vec<Finding> {
     for (id, severity, pattern, description, rationale) in rules {
         let regex = Regex::new(pattern).expect("built-in regex must compile");
         for matched in regex.find_iter(&file.text) {
+            if within(comment_ranges, matched.start()) {
+                continue;
+            }
+            if id == "PERSISTENCE_PATH" && is_packaged_unit_path(&file.text, &matched) {
+                continue;
+            }
             findings.push(text_finding(
                 file,
                 matched.start(),
@@ -235,6 +255,19 @@ fn scan_builtin_text(file: &SourceFile) -> Vec<Finding> {
         }
     }
     findings
+}
+
+/// Systemd unit paths under `$pkgdir` are package payload that pacman tracks
+/// and reviewers see in the file list, not modification of the live system's
+/// persistence locations. Other persistence paths (ld.so.preload, dotfiles,
+/// crontab) stay suspicious even as payload.
+fn is_packaged_unit_path(text: &str, matched: &regex::Match<'_>) -> bool {
+    let lowered = matched.as_str().to_ascii_lowercase();
+    if !lowered.starts_with("/etc/systemd") && !lowered.starts_with(".config/systemd") {
+        return false;
+    }
+    let prefix = text[..matched.start()].trim_end_matches(['"', '\'', '/']);
+    prefix.ends_with("$pkgdir") || prefix.ends_with("${pkgdir}")
 }
 
 fn scan_pkgbuild_metadata(file: &SourceFile) -> Vec<Finding> {
@@ -299,6 +332,7 @@ fn scan_pkgbuild_metadata(file: &SourceFile) -> Vec<Finding> {
                 .to_owned(),
             phase: None,
             new_since_approval: false,
+            accepted: false,
         });
     }
 
@@ -337,6 +371,7 @@ fn scan_pkgbuild_metadata(file: &SourceFile) -> Vec<Finding> {
                 .to_owned(),
             phase: None,
             new_since_approval: false,
+            accepted: false,
         });
     }
 
@@ -413,7 +448,10 @@ pub fn scan_bash(file: &SourceFile, analysis: &BashAnalysis) -> Vec<Finding> {
         if (package_managers.is_match(name) && install_word.is_match(&command.text))
             || npm_bun_install.is_match(&command.text)
         {
-            let severity = if file.kind == FileKind::Install || phase == "install-scriptlet" {
+            let severity = if file.kind == FileKind::Install
+                || phase == "install-scriptlet"
+                || phase == "alpm-hook"
+            {
                 Severity::Critical
             } else if phase == "package" || phase.starts_with("package_") || phase == "prepare" {
                 Severity::High
@@ -431,6 +469,7 @@ pub fn scan_bash(file: &SourceFile, analysis: &BashAnalysis) -> Vec<Finding> {
         }
         if network_clients.is_match(name)
             && (file.kind == FileKind::Install
+                || phase == "alpm-hook"
                 || phase == "package"
                 || phase.starts_with("package_"))
         {
@@ -440,7 +479,7 @@ pub fn scan_bash(file: &SourceFile, analysis: &BashAnalysis) -> Vec<Finding> {
                 "NETWORK_IN_INSTALL_PHASE",
                 Severity::High,
                 "Network client runs in an install-sensitive phase",
-                "Install scriptlets and package() should operate on already verified local inputs.",
+                "Install scriptlets, pacman hooks, and package() should operate on already verified local inputs.",
             ));
         }
         if name == "setcap" || (name == "chattr" && command.text.contains("+i")) {
@@ -470,6 +509,7 @@ pub fn scan_bash(file: &SourceFile, analysis: &BashAnalysis) -> Vec<Finding> {
                     .to_owned(),
             phase: None,
             new_since_approval: false,
+            accepted: false,
         });
     }
     findings
@@ -497,6 +537,7 @@ pub fn known_package_findings(
                 .to_owned(),
             phase: None,
             new_since_approval: false,
+            accepted: false,
         })
         .collect()
 }
@@ -532,6 +573,7 @@ fn text_finding(
         rationale: rationale.to_owned(),
         phase: None,
         new_since_approval: false,
+        accepted: false,
     }
 }
 
@@ -555,6 +597,7 @@ fn command_finding(
         rationale: rationale.to_owned(),
         phase: command.phase.clone(),
         new_since_approval: false,
+        accepted: false,
     }
 }
 
